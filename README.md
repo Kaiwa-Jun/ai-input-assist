@@ -1,24 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Input Assist
+
+AI Input Assistは、Word/Excelファイルから情報を抽出し、フォームフィールドに自動入力するアプリケーションです。
+
+## 機能
+
+- 📄 Word (.docx) およびExcel (.xlsx) ファイルのアップロード
+- 🤖 AIによる文書内容の解析
+- ✨ フォームフィールドへの自動入力
+- 📊 アップロード進捗の表示
+- 🔒 セキュアなファイル処理（サーバーに保存されません）
+
+## 技術スタック
+
+- **Framework**: Next.js 15 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **UI Components**: Shadcn/ui
+- **File Parsing**: mammoth.js (Word), xlsx (Excel)
+- **AI Integration**: External AI API
 
 ## Getting Started
 
-First, run the development server:
+### 前提条件
+
+- Node.js 18以上
+- npm または yarn
+
+### インストール
+
+```bash
+# リポジトリのクローン
+git clone https://github.com/your-username/ai-input-assist.git
+cd ai-input-assist
+
+# 依存関係のインストール
+npm install
+```
+
+### 開発サーバーの起動
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+[http://localhost:3000](http://localhost:3000) でアプリケーションにアクセスできます。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 使い方
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. ファイルアップロードエリアにWord/Excelファイルをドラッグ＆ドロップ
+2. ファイルが自動的に解析されます
+3. 抽出された情報がフォームフィールドに自動入力されます
+4. 必要に応じて内容を編集して送信
+
+## API ドキュメント
+
+詳細なAPIドキュメントは [docs/API.md](./docs/API.md) を参照してください。
+
+## 開発ガイドライン
+
+詳細な開発ガイドラインは [CLAUDE.md](./CLAUDE.md) を参照してください。
 
 ## Learn More
 
