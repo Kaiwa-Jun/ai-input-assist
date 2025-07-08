@@ -44,9 +44,18 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # Create review prompt
-          PROMPT="Please review this pull request diff and provide constructive feedback.
+          # Check if API key is set
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "Error: ANTHROPIC_API_KEY is not set" > claude-review.md
+            exit 0
+          fi
           
+          # Read the diff file
+          DIFF_CONTENT=$(cat pr-diff.txt)
+          
+          # Create the prompt with proper escaping
+          PROMPT="Please review this pull request diff and provide constructive feedback.
+
           Focus on:
           - Code quality and best practices
           - Potential bugs or issues
@@ -61,25 +70,59 @@ jobs:
           - POC for AI-assisted form filling from Word/Excel files
           
           Diff to review:
-          $(cat pr-diff.txt)"
+          $DIFF_CONTENT"
           
-          # Call Claude API
-          REVIEW=$(curl -X POST https://api.anthropic.com/v1/messages \
+          # Escape the prompt for JSON
+          ESCAPED_PROMPT=$(echo "$PROMPT" | jq -Rs .)
+          
+          # Create the JSON payload
+          JSON_PAYLOAD=$(jq -n \
+            --arg model "claude-3-5-sonnet-20241022" \
+            --argjson max_tokens 4096 \
+            --argjson temperature 0.7 \
+            --argjson prompt "$ESCAPED_PROMPT" \
+            '{
+              model: $model,
+              max_tokens: $max_tokens,
+              temperature: $temperature,
+              messages: [{
+                role: "user",
+                content: $prompt
+              }]
+            }')
+          
+          # Call Claude API with better error handling
+          RESPONSE=$(curl -s -w "\n\nHTTP_STATUS:%{http_code}" -X POST https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
-            -d "{
-              \"model\": \"claude-3-5-sonnet-20241022\",
-              \"max_tokens\": 4096,
-              \"messages\": [{
-                \"role\": \"user\",
-                \"content\": \"$PROMPT\"
-              }],
-              \"temperature\": 0.7
-            }" | jq -r '.content[0].text')
+            -d "$JSON_PAYLOAD")
           
-          # Save review for next step
-          echo "$REVIEW" > claude-review.md
+          # Extract HTTP status code
+          HTTP_STATUS=$(echo "$RESPONSE" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
+          
+          echo "API Response Status: $HTTP_STATUS"
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            # Extract the review text
+            REVIEW=$(echo "$BODY" | jq -r '.content[0].text // "No review content available"')
+            echo "$REVIEW" > claude-review.md
+          else
+            # Log error details
+            echo "API Error Response:"
+            echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
+            
+            # Create error message
+            ERROR_MSG="Error: Claude API returned status $HTTP_STATUS"
+            if [ "$HTTP_STATUS" = "401" ]; then
+              ERROR_MSG="$ERROR_MSG - Please check that ANTHROPIC_API_KEY is correctly set in repository secrets"
+            elif [ "$HTTP_STATUS" = "429" ]; then
+              ERROR_MSG="$ERROR_MSG - Rate limit exceeded"
+            fi
+            
+            echo "$ERROR_MSG" > claude-review.md
+          fi
       
       - name: Post review comment
         uses: actions/github-script@v7
