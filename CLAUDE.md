@@ -23,6 +23,10 @@
 - Tailwind CSS for styling
 - Shadcn/ui for UI components
 - Jest + React Testing Library for testing
+- mammoth.js for Word file parsing
+- xlsx for Excel file parsing
+- External AI API for text analysis (OpenAI/Claude/etc.)
+- No database - Stateless file processing only
 
 ## Code Style
 - Use 2-space indentation
@@ -61,11 +65,92 @@
 
 ## State Management
 - Use React hooks for local state
-- Consider Context API for shared state
-- Keep state close to where it's used
+- Manage upload progress and processing status in component state
+- Keep form data state close to the form component
+- No persistent state required (stateless application)
+
+## System Architecture
+
+### Data Flow Overview
+1. **Client Side (Browser)**
+   - File selection/drop → File validation → Send file via FormData
+   - Receive parsed results → Auto-populate form fields
+
+2. **Server Side (Next.js API Route)**
+   - Receive file → Determine file format
+   - Parse Word (mammoth.js) or Excel (xlsx) → Extract text
+   - Call AI API with extracted text → Parse response
+   - Return structured data
+
+3. **External AI API**
+   - Process prompt + extracted text
+   - Natural language processing
+   - Return structured JSON response
+
+### Implementation Flow
+```
+Client                      Server                      AI API
+  |                           |                           |
+  |-- POST file ----------->  |                           |
+  |                           |-- Parse file content      |
+  |                           |                           |
+  |                           |-- Send to AI API ------> |
+  |                           |                           |
+  |                           |<- Return JSON data ------ |
+  |                           |                           |
+  |<- Return parsed data ---  |                           |
+  |                           |                           |
+  |-- Auto-fill form          |                           |
+```
+
+### API Route Structure
+- `/api/parse-document` - Main endpoint for file upload and processing
+  - Accepts: multipart/form-data with Word/Excel files
+  - Returns: JSON with extracted and structured data
+
+### Error Handling
+- Client: File type validation, size limits, upload progress
+- Server: File parsing errors, AI API failures, timeout handling
+- UI: Clear error messages, retry mechanisms
+
+## Next.js Implementation Guidelines
+
+### Routing Best Practices
+- **Route Groups**: Do NOT treat route groups like `/(admin)/page.tsx` as nested routing
+  - Route groups are NOT recognized in routing paths
+  - `/(admin)/page.tsx` conflicts with root `/page.tsx` and causes errors
+  - Use route groups only for organization, not for routing logic
+
+### Data Processing Best Practices
+- **Avoid useEffect() for data operations**
+  - Best practice: Use Server Components for file processing
+  - Handle file parsing in API routes
+  - Process files server-side before sending to client
+
+### Streaming and Loading States
+- **Use Streaming Data Fetching with Suspense**
+  - Implement skeleton loading for each component during data fetch
+  - Wrap components with Suspense boundaries
+  - Example: `<Suspense fallback={<Skeleton />}><Component /></Suspense>`
+
+### Form Handling and Mutations
+- **Prefer Server Actions over event handlers**
+  - Always implement forms with Server Actions when possible
+  - Use `"use server"` directive for server-side form handling
+  - Avoid client-side event handlers for form submissions
+
+### Dynamic Routes and Search Params
+- **Always access params asynchronously**
+  - useSearchParams and dynamic route params require async/await
+  - Example: `const params = await useSearchParams()`
+  - Dynamic routes: `const { id } = await params` in dynamic routes
 
 ## Important Notes
 - This is a POC - focus on core functionality
+- **No database required** - All processing is stateless
 - Prioritize file parsing and UI mapping
 - Ensure good error handling for file uploads
 - Make the auto-fill process transparent to users
+- Implement proper loading states during processing
+- Consider rate limiting for AI API calls
+- Files are processed in-memory and not stored
