@@ -1,0 +1,150 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+
+jobs:
+  claude-review:
+    if: |
+      (github.event_name == 'pull_request') || 
+      (github.event_name == 'issue_comment' && 
+       github.event.issue.pull_request && 
+       contains(github.event.comment.body, '@claude'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Get PR diff
+        id: pr-diff
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff origin/${{ github.base_ref }}...${{ github.sha }} > pr-diff.txt
+          else
+            # For issue comments, fetch the PR branch
+            PR_NUMBER=$(jq -r .issue.number "$GITHUB_EVENT_PATH")
+            gh pr checkout $PR_NUMBER
+            git diff origin/${{ github.event.repository.default_branch }}...HEAD > pr-diff.txt
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+      
+      - name: Review with Claude
+        id: claude-review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Check if API key is set
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "エラー: ANTHROPIC_API_KEYが設定されていません" > claude-review.md
+            exit 0
+          fi
+          
+          # Read the diff file
+          DIFF_CONTENT=$(cat pr-diff.txt)
+          
+          # Create the prompt with proper escaping
+          PROMPT="このプルリクエストの差分をレビューして、建設的なフィードバックを日本語で提供してください。
+
+          レビューの観点:
+          - コード品質とベストプラクティス
+          - 潜在的なバグや問題
+          - パフォーマンスの考慮事項
+          - TypeScriptの型安全性
+          - ReactとNext.jsのベストプラクティス
+          - アクセシビリティの懸念事項
+          
+          プロジェクトのコンテキスト:
+          - Next.js 15アプリケーション（TypeScript使用）
+          - Tailwind CSSとShadcn/uiを使用
+          - Word/Excelファイルからの自動フォーム入力のPOC
+          
+          レビュー対象の差分:
+          $DIFF_CONTENT"
+          
+          # Escape the prompt for JSON
+          ESCAPED_PROMPT=$(echo "$PROMPT" | jq -Rs .)
+          
+          # Create the JSON payload
+          JSON_PAYLOAD=$(jq -n \
+            --arg model "claude-3-5-sonnet-20241022" \
+            --argjson max_tokens 4096 \
+            --argjson temperature 0.7 \
+            --argjson prompt "$ESCAPED_PROMPT" \
+            '{
+              model: $model,
+              max_tokens: $max_tokens,
+              temperature: $temperature,
+              messages: [{
+                role: "user",
+                content: $prompt
+              }]
+            }')
+          
+          # Call Claude API with better error handling
+          RESPONSE=$(curl -s -w "\n\nHTTP_STATUS:%{http_code}" -X POST https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$JSON_PAYLOAD")
+          
+          # Extract HTTP status code
+          HTTP_STATUS=$(echo "$RESPONSE" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
+          
+          echo "API Response Status: $HTTP_STATUS"
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            # Extract the review text
+            REVIEW=$(echo "$BODY" | jq -r '.content[0].text // "レビュー内容が取得できませんでした"')
+            echo "$REVIEW" > claude-review.md
+          else
+            # Log error details
+            echo "API Error Response:"
+            echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
+            
+            # Create error message
+            ERROR_MSG="エラー: Claude APIがステータス $HTTP_STATUS を返しました"
+            if [ "$HTTP_STATUS" = "401" ]; then
+              ERROR_MSG="$ERROR_MSG - リポジトリのシークレットにANTHROPIC_API_KEYが正しく設定されているか確認してください"
+            elif [ "$HTTP_STATUS" = "429" ]; then
+              ERROR_MSG="$ERROR_MSG - レート制限を超過しました"
+            fi
+            
+            echo "$ERROR_MSG" > claude-review.md
+          fi
+      
+      - name: Post review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const review = fs.readFileSync('claude-review.md', 'utf8');
+            
+            const comment = `## 🤖 Claude PRレビュー\n\n${review}\n\n---\n*このレビューはClaude AIによって自動生成されました。*`;
+            
+            if (context.eventName === 'pull_request') {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            } else if (context.eventName === 'issue_comment') {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }

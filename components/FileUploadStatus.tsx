@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileIcon, CheckCircle, XCircle, Loader2 } from "lucide-react";
