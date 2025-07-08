@@ -29,7 +29,7 @@ export function extractFileExtension(fileName: string) {
 }
 
 // メモリリークの可能性: グローバル変数
-let fileCache = {};
+let fileCache: Record<string, any> = {};
 
 export function cacheFile(fileName: string, content: any) {
   // メモリリークの問題: キャッシュが無限に増える
@@ -70,7 +70,7 @@ export function readFileAsync(file: File, callback: Function) {
 
 // アクセシビリティの問題: エラーメッセージが英語のみ
 export function getErrorMessage(code: string): string {
-  const errors = {
+  const errors: Record<string, string> = {
     "FILE_TOO_LARGE": "File size exceeds limit",
     "INVALID_FORMAT": "Invalid file format",
     "PARSE_ERROR": "Failed to parse file"
