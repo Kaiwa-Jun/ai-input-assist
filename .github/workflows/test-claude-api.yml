@@ -1,0 +1,65 @@
+name: Test Claude API
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Claude API Key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          echo "Testing Claude API configuration..."
+          
+          # Check if API key is set
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "❌ Error: ANTHROPIC_API_KEY is not set in repository secrets"
+            exit 1
+          else
+            echo "✅ ANTHROPIC_API_KEY is set"
+            echo "API Key length: ${#ANTHROPIC_API_KEY} characters"
+            echo "API Key prefix: ${ANTHROPIC_API_KEY:0:7}..."
+          fi
+          
+          # Test API call
+          echo -e "\nTesting API call..."
+          RESPONSE=$(curl -s -w "\n\nHTTP_STATUS:%{http_code}" -X POST https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d '{
+              "model": "claude-3-5-sonnet-20241022",
+              "max_tokens": 100,
+              "messages": [{
+                "role": "user",
+                "content": "Say hello in exactly 3 words"
+              }]
+            }')
+          
+          HTTP_STATUS=$(echo "$RESPONSE" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS:/d')
+          
+          echo "HTTP Status: $HTTP_STATUS"
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ API call successful!"
+            echo "Response:"
+            echo "$BODY" | jq '.'
+            echo -e "\nExtracted text:"
+            echo "$BODY" | jq -r '.content[0].text'
+          else
+            echo "❌ API call failed with status $HTTP_STATUS"
+            echo "Error response:"
+            echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
+            
+            if [ "$HTTP_STATUS" = "401" ]; then
+              echo -e "\n⚠️  Authentication failed. Please check:"
+              echo "1. The API key is valid"
+              echo "2. The API key has the correct permissions"
+              echo "3. The API key is correctly copied (no extra spaces or characters)"
+            elif [ "$HTTP_STATUS" = "429" ]; then
+              echo -e "\n⚠️  Rate limit exceeded. Please wait and try again."
+            fi
+          fi
